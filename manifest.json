@@ -1,0 +1,10 @@
+{
+  "id": "relation-resolver",
+  "name": "Relation Resolver",
+  "version": "0.0.0",
+  "minAppVersion": "0.9.12",
+  "description": "Provide API to resolve relations defined in obsidian notes",
+  "author": "AidenLx",
+  "authorUrl": "https://github.com/aidenlx",
+  "isDesktopOnly": true
+}

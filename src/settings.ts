@@ -1,9 +1,19 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import RelationResolver from "rr-main";
 
-export interface RelationResolverSettings {}
+import { RelationInField } from "./misc";
 
-export const DEFAULT_SETTINGS: RelationResolverSettings = {};
+export interface RelationResolverSettings {
+  fieldNames: Record<RelationInField, string>;
+}
+
+export const DEFAULT_SETTINGS: RelationResolverSettings = {
+  fieldNames: {
+    parents: "parent",
+    children: "children",
+    siblings: "sibling",
+  },
+};
 
 export class RelationResolverSettingTab extends PluginSettingTab {
   plugin: RelationResolver;

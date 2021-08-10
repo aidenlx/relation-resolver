@@ -315,7 +315,7 @@ export default class RelationResolver extends Plugin {
             addFromPaths = fmPaths.toMap().map(() => fillWith);
             added = fmPaths.subtract(tree.keySeq());
           } else assertNever(key);
-          return [tree.merge(addFromPaths), added];
+          return [tree.mergeDeep(addFromPaths), added];
         } else return [tree, Set()];
       };
       const [newTree, a] = fetchFromFile(fetchFromCache());

@@ -1,8 +1,12 @@
 {
-  "name": "relation-resolver",
+  "name": "@aidenlx/relation-resolver",
   "version": "0.0.0",
   "description": "Provide API to resolve relations defined in obsidian notes",
-  "main": "main.js",
+  "main": "",
+  "types": "src/api.d.ts",
+  "files": [
+    "src/api.d.ts"
+  ],
   "scripts": {
     "dev": "cross-env BUILD=dev node esbuild.js",
     "build": "cross-env BUILD=production node esbuild.js",
@@ -13,6 +17,12 @@
   "keywords": [],
   "author": "AidenLx",
   "license": "MIT",
+  "dependencies": {
+    "immutable": "^4.0.0-rc.14"
+  },
+  "peerDependencies": {
+    "obsidian": "^0.12.11"
+  },
   "devDependencies": {
     "@release-it/bumper": "^3.0.1",
     "@release-it/conventional-changelog": "^3.0.1",
@@ -42,6 +52,9 @@
     "tslib": "^2.3.0",
     "typescript": "^4.3.5"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "release-it": {
     "hooks": {
       "before:init": [
@@ -61,9 +74,6 @@
       "commitMessage": "chore: release v${version}",
       "tagName": "${version}",
       "tagAnnotation": "Release v${version}"
-    },
-    "npm": {
-      "publish": false
     },
     "github": {
       "release": true,

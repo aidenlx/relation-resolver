@@ -1,7 +1,7 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import RelationResolver from "rr-main";
 
-import { RelationInField } from "./misc";
+import { RelationInField } from "./api";
 
 export interface RelationResolverSettings {
   fieldNames: Record<RelationInField, string>;

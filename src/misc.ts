@@ -1,18 +1,20 @@
 import assertNever from "assert-never";
 import { Map, Set } from "immutable";
 
+import { File_Types, Operation } from "./api";
+
 // types
-export enum LinkType {
+export const enum LinkType {
   /** outgoing, defined within the target file */
-  out,
+  out = "out",
   /** incoming link to target file, defined in external file */
-  in,
+  in = "in",
 }
-/** Defined in front-matter/ Dataview inline fields*/
-export type SoftLink = LinkType.in | LinkType.out;
-export type RelationInField = "parents" | "children" | "siblings";
-export type Operation = "add" | "remove";
-export type AlterOp = Set<SoftLink> | SoftLink;
+
+export const isLinkType = (val: unknown): val is LinkType =>
+  ["in", "out"].includes(val as string);
+
+export type AlterOp = Set<LinkType> | LinkType;
 // parentsCache: {
 //   // File_Parents
 //   file1: {
@@ -25,7 +27,6 @@ export type AlterOp = Set<SoftLink> | SoftLink;
 //   }
 // }
 export type File_Parents = Map<string /*filePath*/, File_Types>;
-export type File_Types = Map<string /* parentPath */, Set<SoftLink>>;
 
 // tools
 export function getToggle(op: Operation, type: LinkType.out): AlterOp;
@@ -37,12 +38,12 @@ export function getToggle(
 // eslint-disable-next-line prefer-arrow/prefer-arrow-functions
 export function getToggle(
   op: Operation,
-  type: SoftLink,
+  type: LinkType,
   targetPath?: string,
 ): AlterOp | Map<string, AlterOp> {
   let types: AlterOp;
   if (op === "add") {
-    types = Set<SoftLink>([type]);
+    types = Set<LinkType>([type]);
   } else if (op === "remove") {
     types = type;
   } else assertNever(op);

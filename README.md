@@ -1,15 +1,39 @@
 # Relation Resolver
 
-## Intro
-
-- template names
-  - `Relation Resolver`
-  - `RelationResolver`
-  - `relation-resolver`
-  - `Provide API to resolve relations defined in obsidian notes`
-  - `2021`
+Provide API to resolve relations defined in obsidian notes
 
 ## How to use
+
+Put this in relation.d.ts
+
+```ts
+import { ChangeInfo, RelationResolverAPI } from "relation-resolver";
+
+declare module "obsidian" {
+  interface MetadataCache {
+    on(
+      name: "relation:changed",
+      callback: (info: ChangeInfo, api: RelationResolverAPI) => any,
+      ctx?: any,
+    ): EventRef;
+    on(
+      name: "relation:resolved",
+      callback: (api: RelationResolverAPI) => any,
+      ctx?: any,
+    ): EventRef;
+  }
+  interface App {
+    plugins: {
+      plugins: {
+        [id: string]: any;
+        ["relation-resolver"]?: {
+          api: RelationResolverAPI;
+        };
+      };
+    };
+  }
+}
+```
 
 ## Compatibility
 

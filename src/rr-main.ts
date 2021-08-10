@@ -1,24 +1,16 @@
 import assertNever from "assert-never";
 import { isSet, Map, Set } from "immutable";
 import { App, Plugin, PluginManifest } from "obsidian";
-import { debounce, EventRef, Events, TFile } from "obsidian";
+import { debounce, TFile } from "obsidian";
 import {
   DEFAULT_SETTINGS,
   RelationResolverSettings,
   RelationResolverSettingTab,
 } from "settings";
 
+import { Operation, RelationInField, RelationResolverAPI } from "./api";
 import { getPathsFromField, getPathsFromFm } from "./get-field";
-import {
-  AlterOp,
-  File_Parents,
-  File_Types,
-  getToggle,
-  LinkType,
-  Operation,
-  RelationInField,
-  SoftLink,
-} from "./misc";
+import { AlterOp, File_Parents, getToggle, isLinkType, LinkType } from "./misc";
 
 export default class RelationResolver extends Plugin {
   settings: RelationResolverSettings = DEFAULT_SETTINGS;
@@ -29,6 +21,9 @@ export default class RelationResolver extends Plugin {
   fmCache: Map<string, Map<RelationInField, Set<string> | null>> = Map();
   get metadataCache() {
     return this.app.metadataCache;
+  }
+  get vault() {
+    return this.app.vault;
   }
 
   filesToUpdate: TFile[] = [];
@@ -43,9 +38,9 @@ export default class RelationResolver extends Plugin {
   trigger(
     name: "relation:changed",
     info: { op: Operation; relation: RelationInField; affected: Set<string> },
-    ref: RelationResolver,
+    api: RelationResolver["api"],
   ): void;
-  trigger(name: "relation:resolved", ref: RelationResolver): void;
+  trigger(name: "relation:resolved", api: RelationResolver["api"]): void;
   trigger(name: string, ...data: any[]): void {
     this.metadataCache.trigger(name, ...data);
   }
@@ -68,13 +63,13 @@ export default class RelationResolver extends Plugin {
         }
       }),
     );
-    // this.metadataCache.on("relation:resolved", (ref) => {
-    //   console.log("relation:resolved", ref);
+    // this.metadataCache.on("relation:resolved", (api) => {
+    //   console.log("relation:resolved", api);
     // });
     // this.metadataCache.on(
     //   "relation:changed",
-    //   ({ relation, op, affected }, ref) => {
-    //     console.log(relation + op, affected.toJS(), ref);
+    //   ({ relation, op, affected }, api) => {
+    //     console.log(relation + op, affected.toJS(), api);
     //   },
     // );
   }
@@ -93,41 +88,43 @@ export default class RelationResolver extends Plugin {
     await this.saveData(this.settings);
   }
 
-  getParentsOf(filePath: string): Set<string> | null {
-    return this.parentsCache.get(filePath)?.keySeq().toSet() ?? null;
-  }
-  getParentsWithTypes(filePath: string): File_Types | null {
-    return this.parentsCache.get(filePath, null);
-  }
-  getChildrenOf(filePath: string): Set<string> | null {
-    const result = this.parentsCache
-      .toSeq()
-      .filter((ft) => ft.has(filePath))
-      .keySeq();
-    return result.isEmpty() ? null : result.toSet();
-  }
-  getChildrenWithTypes(filePath: string): File_Types | null {
-    const revert = (type: SoftLink) =>
-      type === LinkType.in ? LinkType.out : LinkType.in;
-    const result = this.parentsCache
-      .toSeq()
-      .filter((ft) => ft.has(filePath))
-      .map((ft) => (ft.get(filePath) as Set<SoftLink>).map((t) => revert(t)));
-    return result.isEmpty() ? null : result.toMap();
-  }
-  getSiblingsOf(filePath: string): Set<string> | null {
-    const set = this.getParentsOf(filePath);
-    if (!set) return null;
+  api: RelationResolverAPI = {
+    getParentsOf: (filePath) => {
+      return this.parentsCache.get(filePath)?.keySeq().toSet() ?? null;
+    },
+    getParentsWithTypes: (filePath) => {
+      return this.parentsCache.get(filePath, null);
+    },
+    getChildrenOf: (filePath) => {
+      const result = this.parentsCache
+        .toSeq()
+        .filter((ft) => ft.has(filePath))
+        .keySeq();
+      return result.isEmpty() ? null : result.toSet();
+    },
+    getChildrenWithTypes: (filePath) => {
+      const revert = (type: LinkType) =>
+        type === LinkType.in ? LinkType.out : LinkType.in;
+      const result = this.parentsCache
+        .toSeq()
+        .filter((ft) => ft.has(filePath))
+        .map((ft) => (ft.get(filePath) as Set<LinkType>).map((t) => revert(t)));
+      return result.isEmpty() ? null : result.toMap();
+    },
+    getSiblingsOf: (filePath) => {
+      const set = this.api.getParentsOf(filePath);
+      if (!set) return null;
 
-    const result = set
-      .reduce((newSet, path) => {
-        let children = this.getChildrenOf(path);
-        if (children) return newSet.union(children);
-        else return newSet;
-      }, Set<string>())
-      .delete(filePath);
-    return result.isEmpty() ? null : result;
-  }
+      const result = set
+        .reduce((newSet, path) => {
+          let children = this.api.getChildrenOf(path);
+          if (children) return newSet.union(children);
+          else return newSet;
+        }, Set<string>())
+        .delete(filePath);
+      return result.isEmpty() ? null : result;
+    },
+  };
 
   /**
    * @param files force update entire cache when not given
@@ -143,7 +140,7 @@ export default class RelationResolver extends Plugin {
     for (const file of files) {
       this.setCacheFromFile(file, !updateAll);
     }
-    if (updateAll) this.trigger("relation:resolved", this);
+    if (updateAll) this.trigger("relation:resolved", this.api);
   }
 
   /**
@@ -239,8 +236,7 @@ export default class RelationResolver extends Plugin {
       // merge into parentCache
       if (!newTree.isEmpty()) {
         const merge = (oldVal: unknown, newVal: unknown, key: unknown) => {
-          if (typeof newVal === "number" && newVal in LinkType && isSet(oldVal))
-            return oldVal.delete(newVal);
+          if (isLinkType(newVal) && isSet(oldVal)) return oldVal.delete(newVal);
           else {
             console.warn(`unexpected merge: @${key}, %o -> %o`, oldVal, newVal);
             return newVal;
@@ -265,7 +261,7 @@ export default class RelationResolver extends Plugin {
           else if (key === "children")
             this.parentsCache = this.parentsCache.withMutations((m) =>
               keys.forEach((key) => {
-                if ((m.getIn([key, targetPath]) as Set<SoftLink>).isEmpty())
+                if ((m.getIn([key, targetPath]) as Set<LinkType>).isEmpty())
                   m.deleteIn([key, targetPath]);
               }),
             );
@@ -309,7 +305,7 @@ export default class RelationResolver extends Plugin {
             this.trigger(
               "relation:changed",
               { op, relation: "parents", affected: parentAffected },
-              this,
+              this.api,
             );
           const childrenAffected = Set<string>().withMutations((m) => {
             if (fromC && !fromC.isEmpty()) m.add(file.path);
@@ -319,7 +315,7 @@ export default class RelationResolver extends Plugin {
             this.trigger(
               "relation:changed",
               { op, relation: "children", affected: childrenAffected },
-              this,
+              this.api,
             );
         }
       };

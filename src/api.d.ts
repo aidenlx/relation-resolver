@@ -22,7 +22,8 @@ export type Operation = "add" | "remove";
 export type ChangeInfo = {
   op: Operation;
   relation: RelationInField;
-  affected: Set<string>;
+  /** affected target and the list of added/removed relation files(parents/...) */
+  affected: Map<string, Set<string>>;
 };
 
 declare module "obsidian" {

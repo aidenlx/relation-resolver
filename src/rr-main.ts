@@ -8,7 +8,12 @@ import {
   RelationResolverSettingTab,
 } from "settings";
 
-import { Operation, RelationInField, RelationResolverAPI } from "./api";
+import {
+  ChangeInfo,
+  Operation,
+  RelationInField,
+  RelationResolverAPI,
+} from "./api";
 import { getPathsFromField, getPathsFromFm } from "./get-field";
 import { AlterOp, File_Parents, getToggle, isLinkType, LinkType } from "./misc";
 
@@ -37,7 +42,7 @@ export default class RelationResolver extends Plugin {
   );
   trigger(
     name: "relation:changed",
-    info: { op: Operation; relation: RelationInField; affected: Set<string> },
+    info: ChangeInfo,
     api: RelationResolver["api"],
   ): void;
   trigger(name: "relation:resolved", api: RelationResolver["api"]): void;
@@ -295,23 +300,28 @@ export default class RelationResolver extends Plugin {
         fromP: Set<string> | null,
       ) => {
         const notEmpty = (set: typeof fromC): set is Set<string> =>
-          !!set && !set.isEmpty();
+            !!set && !set.isEmpty(),
+          fillWith = Set([file.path]);
         if (notEmpty(fromC) || notEmpty(fromP)) {
-          const parentAffected = Set<string>().withMutations((m) => {
-            if (fromP && !fromP.isEmpty()) m.add(file.path);
-            if (fromC) m.merge(fromC);
-          });
-          if (notEmpty(parentAffected))
+          const parentAffected = Map<string, Set<string>>().withMutations(
+            (m) => {
+              if (fromP && !fromP.isEmpty()) m.set(file.path, fromP);
+              if (fromC) m.merge(fromC.toMap().map(() => fillWith));
+            },
+          );
+          if (!parentAffected.isEmpty())
             this.trigger(
               "relation:changed",
               { op, relation: "parents", affected: parentAffected },
               this.api,
             );
-          const childrenAffected = Set<string>().withMutations((m) => {
-            if (fromC && !fromC.isEmpty()) m.add(file.path);
-            if (fromP) m.merge(fromP);
-          });
-          if (notEmpty(childrenAffected))
+          const childrenAffected = Map<string, Set<string>>().withMutations(
+            (m) => {
+              if (fromC && !fromC.isEmpty()) m.set(file.path, fromC);
+              if (fromP) m.merge(fromP.toMap().map(() => fillWith));
+            },
+          );
+          if (!childrenAffected.isEmpty())
             this.trigger(
               "relation:changed",
               { op, relation: "children", affected: childrenAffected },

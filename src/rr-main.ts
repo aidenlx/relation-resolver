@@ -1,3 +1,4 @@
+import flat from "array.prototype.flat";
 import assertNever from "assert-never";
 import { isSet, Map, Set } from "immutable";
 import { App, Plugin, PluginManifest } from "obsidian";
@@ -10,7 +11,7 @@ import {
 
 import {
   ChangeInfo,
-  File_Type,
+  File_Types,
   Operation,
   RelationInField,
   RelationResolverAPI,
@@ -76,6 +77,24 @@ export default class RelationResolver extends Plugin {
         }
       }),
     );
+    this.registerEvent(
+      this.vault.on("delete", (file) => {
+        if (file instanceof TFile && file.extension === "md")
+          this.deleteFromCache(file.path);
+      }),
+    );
+    this.registerEvent(
+      this.vault.on("rename", (file, oldPath) => {
+        if (file instanceof TFile && file.extension === "md") {
+          this.deleteFromCache(oldPath);
+          // set delay for renamed file to load cache
+          setTimeout(() => {
+            this.updateCacheForFilenames(file.basename);
+            this.setCacheFromFile(file, true, true);
+          }, 1e3);
+        }
+      }),
+    );
     // this.metadataCache.on("relation:resolved", (api) => {
     //   console.log("relation:resolved", api);
     // });
@@ -86,6 +105,80 @@ export default class RelationResolver extends Plugin {
     //   },
     // );
   }
+  deleteFromCache(filePath: string) {
+    const parents = this.parentsCache.get(filePath) ?? null;
+    let children: File_Types | null = Map().asMutable() as File_Types;
+    this.parentsCache = this.parentsCache
+      .delete(filePath)
+      .withMutations((m) => {
+        let parents, types;
+        for (const key of m.keys()) {
+          if ((parents = m.get(key)) && (types = parents.get(filePath))) {
+            const deleted = parents.delete(filePath);
+            if (deleted.isEmpty()) m.delete(key);
+            else m.set(key, deleted);
+            children?.set(key, types);
+          }
+        }
+      });
+    children = children.isEmpty() ? null : children.asImmutable();
+    const affectedP = Map<string, File_Types>().withMutations((m) => {
+      if (parents) m.set(filePath, parents);
+      if (children)
+        m.merge(children.map((types) => Map({ [filePath]: types })));
+    });
+    const affectedC = Map<string, File_Types>().withMutations((m) => {
+      if (children)
+        m.set(
+          filePath,
+          children.map((types) => types.map((t) => revertRelType(t))),
+        );
+      if (parents)
+        m.merge(
+          parents.map((types) =>
+            Map({ [filePath]: types.map((t) => revertRelType(t)) }),
+          ),
+        );
+    });
+    const op = "remove";
+    this.trigger(
+      "relation:changed",
+      { op, relation: "parents", affected: affectedP },
+      this.api,
+    );
+    this.trigger(
+      "relation:changed",
+      { op, relation: "children", affected: affectedC },
+      this.api,
+    );
+  }
+  /**
+   * Update cache with files that includes given paths in fields
+   * @param findFor filename to match (no extension)
+   */
+  updateCacheForFilenames(...findFor: string[]): void {
+    const matched = (field: unknown) =>
+      !!(
+        field &&
+        Array.isArray(field) &&
+        flat(field, Infinity).some(
+          (val) =>
+            typeof val === "string" &&
+            findFor.some((name) => val.includes(name)),
+        )
+      );
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const fm = this.metadataCache.getFileCache(file)?.frontmatter;
+      if (!fm) continue;
+      const { fieldNames } = this.settings;
+      if (
+        matched(fm[fieldNames["parents"]]) ||
+        matched(fm[fieldNames["children"]])
+      )
+        this.setCacheFromFile(file, true, true);
+    }
+  }
+
   async onload() {
     console.log("loading relation-resolver");
     await this.loadSettings();
@@ -159,6 +252,7 @@ export default class RelationResolver extends Plugin {
   /**
    * Update parent/children from file with given function to get raw fields
    * @param file file to get fields
+   * @param forceFetch true to fetch files even if fm are the same
    * @param getValFunc function to get vaild filepaths from file
    * @returns affected files
    */
@@ -166,12 +260,13 @@ export default class RelationResolver extends Plugin {
     key: "parents" | "children",
     file: TFile,
     getValFunc: getPathsFromField,
+    forceFetch: boolean,
   ): [added: Set<string> | null, removed: Set<string> | null] {
     const targetPath = file.path;
 
     let added: Set<string> | null, removed: Set<string> | null;
     // get from children field
-    const fmPaths = getValFunc.call(this, key, file);
+    const fmPaths = getValFunc.call(this, key, file, forceFetch);
     if (fmPaths !== false) {
       type mergeMap = Map<string, Map<string, AlterOp>>;
       /** get all cached relation for given file and marked them remove */
@@ -290,22 +385,25 @@ export default class RelationResolver extends Plugin {
   }
 
   /** Read relation defined in given file and update relationCache */
-  private setCacheFromFile(file: TFile, triggerEvt = true) {
+  private setCacheFromFile(file: TFile, triggerEvt = true, forceFetch = false) {
     const [addedP, removedP] = this.updateParent(
       "parents",
       file,
       getPathsFromFm,
+      forceFetch,
     );
     const [addedC, removedC] = this.updateParent(
       "children",
       file,
       getPathsFromFm,
+      forceFetch,
     );
     if (triggerEvt) {
       type from = Set<string> | null;
       const notEmpty = (set: from): set is Set<string> =>
         !!set && !set.isEmpty();
-      const fillWith = Map({ [file.path]: "implied" });
+      const fillWithI = Map({ [file.path]: Set(["implied"]) }),
+        fillWithD = Set<RelationType>(["direct"]);
       const trigger = (op: Operation, fromC: from, fromP: from) => {
         const getAffectednSend = (relation: "parents" | "children") => {
           let direct: from, implied: from;
@@ -316,13 +414,13 @@ export default class RelationResolver extends Plugin {
             direct = fromC;
             implied = fromP;
           } else assertNever(relation);
-          const affected = Map<string, File_Type>().withMutations((m) => {
+          const affected = Map<string, File_Types>().withMutations((m) => {
             if (notEmpty(direct))
               m.set(
                 file.path,
-                direct.toMap().map(() => "direct"),
+                direct.toMap().map(() => fillWithD),
               );
-            if (implied) m.merge(implied.toMap().map(() => fillWith));
+            if (implied) m.merge(implied.toMap().map(() => fillWithI));
           });
           if (!affected.isEmpty())
             this.trigger(

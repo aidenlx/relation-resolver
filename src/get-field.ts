@@ -8,16 +8,19 @@ export type getPathsFromField = (
   this: RelationResolver,
   key: "parents" | "children",
   file: TFile,
+  forceFetch: boolean,
 ) => Set<string> | null | false;
 
 /**
  * Get vaild paths from given key of file's frontmatter
+ * @param forceFetch true to fetch files even if fm are the same
  * @returns false if no changes in frontmatter; null if given key not exists
  */
 export function getPathsFromFm(
   this: RelationResolver,
   key: "parents" | "children",
   file: TFile,
+  forceFetch: boolean,
 ): Set<string> | null | false {
   const getLinktext = (): Set<string> | null => {
       const fm = this.metadataCache.getFileCache(file)?.frontmatter;
@@ -35,7 +38,7 @@ export function getPathsFromFm(
     | Set<string>
     | null
     | undefined;
-  if (cachedFm !== undefined && is(val, cachedFm)) {
+  if (!forceFetch && cachedFm !== undefined && is(val, cachedFm)) {
     return false;
   } else {
     this.fmCache = this.fmCache.setIn([targetPath, key], val);

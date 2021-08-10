@@ -17,7 +17,6 @@ export interface RelationResolverAPI {
 export type RelationType = "direct" | "implied";
 export type RelationInField = "parents" | "children" | "siblings";
 export type File_Types = Map<string /* parentPath */, Set<RelationType>>;
-export type File_Type = Map<string /* parentPath */, RelationType>;
 
 export type Operation = "add" | "remove";
 
@@ -25,7 +24,7 @@ export type ChangeInfo = {
   op: Operation;
   relation: RelationInField;
   /** affected target and the list of added/removed relation files(parents/...) */
-  affected: Map<string, File_Type>;
+  affected: Map<string, File_Types>;
 };
 
 declare module "obsidian" {

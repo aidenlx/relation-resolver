@@ -10,12 +10,20 @@ import {
 
 import {
   ChangeInfo,
+  File_Type,
   Operation,
   RelationInField,
   RelationResolverAPI,
+  RelationType,
 } from "./api";
 import { getPathsFromField, getPathsFromFm } from "./get-field";
-import { AlterOp, File_Parents, getToggle, isLinkType, LinkType } from "./misc";
+import {
+  AlterOp,
+  File_Parents,
+  getToggle,
+  isRelType,
+  revertRelType,
+} from "./misc";
 
 export default class RelationResolver extends Plugin {
   settings: RelationResolverSettings = DEFAULT_SETTINGS;
@@ -108,12 +116,12 @@ export default class RelationResolver extends Plugin {
       return result.isEmpty() ? null : result.toSet();
     },
     getChildrenWithTypes: (filePath) => {
-      const revert = (type: LinkType) =>
-        type === LinkType.in ? LinkType.out : LinkType.in;
       const result = this.parentsCache
         .toSeq()
         .filter((ft) => ft.has(filePath))
-        .map((ft) => (ft.get(filePath) as Set<LinkType>).map((t) => revert(t)));
+        .map((ft) =>
+          (ft.get(filePath) as Set<RelationType>).map((t) => revertRelType(t)),
+        );
       return result.isEmpty() ? null : result.toMap();
     },
     getSiblingsOf: (filePath) => {
@@ -170,7 +178,7 @@ export default class RelationResolver extends Plugin {
       const fetchFromCache = (): mergeMap => {
         let tree: mergeMap;
         if (key === "parents") {
-          const type = LinkType.out,
+          const type = "direct",
             fillWith = getToggle("remove", type);
           const srcParents = this.parentsCache.get(targetPath);
           tree = Map<string, Map<string, AlterOp>>();
@@ -181,7 +189,7 @@ export default class RelationResolver extends Plugin {
             );
           return tree;
         } else if (key === "children") {
-          const type = LinkType.in,
+          const type = "implied",
             fillWith = getToggle("remove", type, targetPath);
           return this.parentsCache
             .filter((parents) => !!parents.get(targetPath)?.has(type))
@@ -195,7 +203,7 @@ export default class RelationResolver extends Plugin {
         if (fmPaths !== null) {
           let addFromPaths: mergeMap, added: Set<string>;
           if (key === "parents") {
-            const type = LinkType.out,
+            const type = "direct",
               fillWith = getToggle("add", type);
             addFromPaths = Map<string, Map<string, AlterOp>>().withMutations(
               (m) =>
@@ -207,7 +215,7 @@ export default class RelationResolver extends Plugin {
             );
             added = fmPaths.subtract(tree.get(targetPath)?.keySeq() ?? []);
           } else if (key === "children") {
-            const type = LinkType.in,
+            const type = "implied",
               fillWith = getToggle("add", type, targetPath);
             addFromPaths = fmPaths.toMap().map(() => fillWith);
             added = fmPaths.subtract(tree.keySeq());
@@ -241,7 +249,7 @@ export default class RelationResolver extends Plugin {
       // merge into parentCache
       if (!newTree.isEmpty()) {
         const merge = (oldVal: unknown, newVal: unknown, key: unknown) => {
-          if (isLinkType(newVal) && isSet(oldVal)) return oldVal.delete(newVal);
+          if (isRelType(newVal) && isSet(oldVal)) return oldVal.delete(newVal);
           else {
             console.warn(`unexpected merge: @${key}, %o -> %o`, oldVal, newVal);
             return newVal;
@@ -266,7 +274,7 @@ export default class RelationResolver extends Plugin {
           else if (key === "children")
             this.parentsCache = this.parentsCache.withMutations((m) =>
               keys.forEach((key) => {
-                if ((m.getIn([key, targetPath]) as Set<LinkType>).isEmpty())
+                if ((m.getIn([key, targetPath]) as Set<RelationType>).isEmpty())
                   m.deleteIn([key, targetPath]);
               }),
             );
@@ -297,7 +305,7 @@ export default class RelationResolver extends Plugin {
       type from = Set<string> | null;
       const notEmpty = (set: from): set is Set<string> =>
         !!set && !set.isEmpty();
-      const fillWith = Set([file.path]);
+      const fillWith = Map({ [file.path]: "implied" });
       const trigger = (op: Operation, fromC: from, fromP: from) => {
         const getAffectednSend = (relation: "parents" | "children") => {
           let direct: from, implied: from;
@@ -308,8 +316,12 @@ export default class RelationResolver extends Plugin {
             direct = fromC;
             implied = fromP;
           } else assertNever(relation);
-          const affected = Map<string, Set<string>>().withMutations((m) => {
-            if (notEmpty(direct)) m.set(file.path, direct);
+          const affected = Map<string, File_Type>().withMutations((m) => {
+            if (notEmpty(direct))
+              m.set(
+                file.path,
+                direct.toMap().map(() => "direct"),
+              );
             if (implied) m.merge(implied.toMap().map(() => fillWith));
           });
           if (!affected.isEmpty())

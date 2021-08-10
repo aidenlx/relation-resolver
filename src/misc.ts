@@ -1,20 +1,14 @@
 import assertNever from "assert-never";
 import { Map, Set } from "immutable";
 
-import { File_Types, Operation } from "./api";
+import { File_Types, Operation, RelationType } from "./api";
 
-// types
-export const enum LinkType {
-  /** outgoing, defined within the target file */
-  out = "out",
-  /** incoming link to target file, defined in external file */
-  in = "in",
-}
+export const isRelType = (val: unknown): val is RelationType =>
+  val === "direct" || val === "implied";
+export const revertRelType = (type: RelationType): RelationType =>
+  type === "direct" ? "implied" : "direct";
 
-export const isLinkType = (val: unknown): val is LinkType =>
-  ["in", "out"].includes(val as string);
-
-export type AlterOp = Set<LinkType> | LinkType;
+export type AlterOp = Set<RelationType> | RelationType;
 // parentsCache: {
 //   // File_Parents
 //   file1: {
@@ -29,29 +23,29 @@ export type AlterOp = Set<LinkType> | LinkType;
 export type File_Parents = Map<string /*filePath*/, File_Types>;
 
 // tools
-export function getToggle(op: Operation, type: LinkType.out): AlterOp;
+export function getToggle(op: Operation, type: "direct"): AlterOp;
 export function getToggle(
   op: Operation,
-  type: LinkType.in,
+  type: "implied",
   targetPath: string,
 ): Map<string, AlterOp>;
 // eslint-disable-next-line prefer-arrow/prefer-arrow-functions
 export function getToggle(
   op: Operation,
-  type: LinkType,
+  type: RelationType,
   targetPath?: string,
 ): AlterOp | Map<string, AlterOp> {
   let types: AlterOp;
   if (op === "add") {
-    types = Set<LinkType>([type]);
+    types = Set<RelationType>([type]);
   } else if (op === "remove") {
     types = type;
   } else assertNever(op);
 
-  if (type === LinkType.in) {
+  if (type === "implied") {
     if (!targetPath) throw new Error("No targetPath given when setting toggle");
     return Map({ [targetPath]: types });
-  } else if (type === LinkType.out) {
+  } else if (type === "direct") {
     return types;
   } else assertNever(type);
 }

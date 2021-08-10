@@ -11,19 +11,21 @@ export interface RelationResolverAPI {
 }
 
 /**
- * out: outgoing link, defined within the target file;
- * in: incoming link to target file, defined in external file
+ * direct: outgoing link, defined within the target file;
+ * implied: incoming link to target file, defined in external file
  */
-export type RelationType = "in" | "out";
+export type RelationType = "direct" | "implied";
 export type RelationInField = "parents" | "children" | "siblings";
 export type File_Types = Map<string /* parentPath */, Set<RelationType>>;
+export type File_Type = Map<string /* parentPath */, RelationType>;
+
 export type Operation = "add" | "remove";
 
 export type ChangeInfo = {
   op: Operation;
   relation: RelationInField;
   /** affected target and the list of added/removed relation files(parents/...) */
-  affected: Map<string, Set<string>>;
+  affected: Map<string, File_Type>;
 };
 
 declare module "obsidian" {

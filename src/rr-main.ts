@@ -433,7 +433,7 @@ export default class RelationResolver extends Plugin {
         // delete key with empty types
         if (removed && !removed.isEmpty()) {
           const keys = removed;
-          if (key === "parents")
+          if (key === "parents") {
             this.parentsCache = this.parentsCache.update(
               targetPath,
               // @ts-ignore
@@ -443,7 +443,9 @@ export default class RelationResolver extends Plugin {
                 );
               },
             );
-          else if (key === "children")
+            if (this.parentsCache.get(targetPath)?.isEmpty())
+              this.parentsCache = this.parentsCache.delete(targetPath);
+          } else if (key === "children")
             this.parentsCache = this.parentsCache.withMutations((m) =>
               keys.forEach((key) => {
                 if ((m.getIn([key, targetPath]) as Set<RelationType>).isEmpty())
@@ -475,6 +477,10 @@ export default class RelationResolver extends Plugin {
       getPathsFromFm,
       forceFetch,
     );
+    this.parentsCache = this.parentsCache.withMutations((m) =>
+      removedC?.forEach((key) => m.get(key)?.isEmpty() && m.delete(key)),
+    );
+
     if (triggerEvt) {
       type from = Set<string> | null;
       const notEmpty = (set: from): set is Set<string> =>

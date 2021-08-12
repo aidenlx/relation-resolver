@@ -1,6 +1,6 @@
 import flat from "array.prototype.flat";
 import assertNever from "assert-never";
-import { isSet, Map, Set } from "immutable";
+import { isSet, List, Map, Set } from "immutable";
 import { App, Plugin, PluginManifest } from "obsidian";
 import { debounce, TFile } from "obsidian";
 import {
@@ -11,6 +11,7 @@ import {
 
 import {
   ChangeInfo,
+  File_Parents,
   File_Types,
   Operation,
   RelationInField,
@@ -18,13 +19,7 @@ import {
   RelationType,
 } from "./api";
 import { getPathsFromField, getPathsFromFm } from "./get-field";
-import {
-  AlterOp,
-  File_Parents,
-  getToggle,
-  isRelType,
-  revertRelType,
-} from "./misc";
+import { AlterOp, getToggle, isRelType, revertRelType } from "./misc";
 
 export default class RelationResolver extends Plugin {
   settings: RelationResolverSettings = DEFAULT_SETTINGS;
@@ -203,7 +198,6 @@ export default class RelationResolver extends Plugin {
     },
     getChildrenOf: (filePath) => {
       const result = this.parentsCache
-        .toSeq()
         .filter((ft) => ft.has(filePath))
         .keySeq();
       return result.isEmpty() ? null : result.toSet();
@@ -230,7 +224,50 @@ export default class RelationResolver extends Plugin {
         .delete(filePath);
       return result.isEmpty() ? null : result;
     },
+    getPaths: (rel, filePath, endingPaths) => {
+      let allPaths = List<List<string>>().asMutable();
+      const getMap = (target: string): Map<string, any> | null =>
+        // @ts-ignore
+        this.getMap(target, rel) as Map<string, any> | null;
+
+      const iter = (target: string, childPath: List<string>) => {
+        const children = getMap(target);
+        if (children)
+          for (const filePath of children.keys()) {
+            if (
+              childPath.includes(filePath) || // prevent self reference
+              endingPaths?.includes(filePath)
+            )
+              allPaths.push(childPath.push(filePath));
+            else iter(filePath, childPath.push(filePath));
+          }
+        else if (
+          !childPath.isEmpty() &&
+          (!endingPaths || endingPaths.includes(childPath.last()))
+        )
+          allPaths.push(childPath);
+      };
+
+      iter(filePath, List<string>([filePath]));
+      return allPaths.asImmutable();
+    },
   };
+
+  private getMap(target: string, rel: "parents"): File_Types | null;
+  private getMap(target: string, rel: "children"): File_Parents | null;
+  private getMap(
+    target: string,
+    rel: "parents" | "children",
+  ): File_Parents | File_Types | null {
+    const parents =
+      rel === "parents"
+        ? this.parentsCache.get(target)
+        : rel === "children"
+        ? this.parentsCache.filter((ft) => ft.has(target))
+        : assertNever(rel);
+    if (parents && !parents.isEmpty()) return parents;
+    else return null;
+  }
 
   /**
    * @param files force update entire cache when not given

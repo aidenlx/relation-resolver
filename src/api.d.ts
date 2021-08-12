@@ -1,6 +1,6 @@
 import "obsidian";
 
-import { Map, Set } from "immutable";
+import { List, Map, Set } from "immutable";
 
 export interface RelationResolverAPI {
   getParentsOf: (filePath: string) => Set<string> | null;
@@ -8,6 +8,15 @@ export interface RelationResolverAPI {
   getChildrenOf: (filePath: string) => Set<string> | null;
   getChildrenWithTypes: (filePath: string) => File_Types | null;
   getSiblingsOf: (filePath: string) => Set<string> | null;
+  /**
+   * Get path from given file to top parents/bottom children
+   * @param endingPaths get paths ends with given files if given
+   */
+  getPaths: (
+    rel: "parents" | "children",
+    filePath: string,
+    endingPaths?: string[],
+  ) => List<List<string>> | null;
 }
 
 /**
@@ -17,6 +26,7 @@ export interface RelationResolverAPI {
 export type RelationType = "direct" | "implied";
 export type RelationInField = "parents" | "children" | "siblings";
 export type File_Types = Map<string /* parentPath */, Set<RelationType>>;
+export type File_Parents = Map<string /*filePath*/, File_Types>;
 
 export type Operation = "add" | "remove";
 

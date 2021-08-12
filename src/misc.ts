@@ -20,7 +20,6 @@ export type AlterOp = Set<RelationType> | RelationType;
 //     parent1: [in],
 //   }
 // }
-export type File_Parents = Map<string /*filePath*/, File_Types>;
 
 // tools
 export function getToggle(op: Operation, type: "direct"): AlterOp;

@@ -21,6 +21,8 @@ import {
 import { getPathsFromField, getPathsFromFm } from "./get-field";
 import { AlterOp, getToggle, isRelType, revertRelType } from "./misc";
 
+const SELF_REF_ID = ":";
+
 export default class RelationResolver extends Plugin {
   settings: RelationResolverSettings = DEFAULT_SETTINGS;
 
@@ -234,22 +236,60 @@ export default class RelationResolver extends Plugin {
         const children = getMap(target);
         if (children)
           for (const filePath of children.keys()) {
-            if (
-              childPath.includes(filePath) || // prevent self reference
-              endingPaths?.includes(filePath)
-            )
+            if (childPath.includes(filePath))
+              // prevent self reference
+              allPaths.push(childPath.push(filePath + SELF_REF_ID));
+            else if (endingPaths?.includes(filePath))
               allPaths.push(childPath.push(filePath));
             else iter(filePath, childPath.push(filePath));
           }
         else if (
-          !childPath.isEmpty() &&
+          childPath.size > 1 &&
           (!endingPaths || endingPaths.includes(childPath.last()))
         )
           allPaths.push(childPath);
       };
 
       iter(filePath, List<string>([filePath]));
-      return allPaths.asImmutable();
+      return allPaths.isEmpty() ? null : allPaths.asImmutable();
+    },
+    getAllRelNodesFrom: (rel, filePath, endingPaths) => {
+      const paths = this.api.getPaths(rel, filePath, endingPaths);
+      if (paths) {
+        const nodeIds = (paths.flatten() as List<string>)
+            .toSeq()
+            .filterNot((v) => v.endsWith(SELF_REF_ID))
+            .toSet(),
+          excludes = paths
+            .toSeq()
+            .filter((path) => path.last()?.endsWith(SELF_REF_ID))
+            .map((path) => {
+              const tuple = path // selfRefPaths tuple
+                .takeLast(2)
+                .update(-1, (v) => (v as string).slice(0, -1));
+              return rel === "parents"
+                ? tuple
+                : rel === "children"
+                ? tuple.reverse()
+                : assertNever(rel);
+            })
+            .reduce(
+              (map, [key, exclude]) =>
+                map.update(key, (set) =>
+                  set ? set.add(exclude) : Set([exclude]),
+                ),
+              Map<string, Set<string>>(),
+            );
+        let parents;
+        return nodeIds.toMap().map(
+          (filePath): File_Types | null =>
+            (parents = this.parentsCache
+              .get(filePath)
+              ?.deleteAll(excludes.get(filePath) ?? [])) && !parents.isEmpty()
+              ? parents
+              : null, // top nodes
+        );
+      } else return null;
     },
   };
 

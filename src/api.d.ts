@@ -11,12 +11,18 @@ export interface RelationResolverAPI {
   /**
    * Get path from given file to top parents/bottom children
    * @param endingPaths get paths ends with given files if given
+   * @returns self reference if last filepath ends with ":"
    */
   getPaths: (
     rel: "parents" | "children",
     filePath: string,
     endingPaths?: string[],
   ) => List<List<string>> | null;
+  getAllRelNodesFrom: (
+    rel: "parents" | "children",
+    filePath: string,
+    endingPaths?: string[],
+  ) => FlatHierarchyMap | null;
 }
 
 /**
@@ -27,6 +33,7 @@ export type RelationType = "direct" | "implied";
 export type RelationInField = "parents" | "children" | "siblings";
 export type File_Types = Map<string /* parentPath */, Set<RelationType>>;
 export type File_Parents = Map<string /*filePath*/, File_Types>;
+export type FlatHierarchyMap = Map<string /*filePath*/, File_Types | null>;
 
 export type Operation = "add" | "remove";
 

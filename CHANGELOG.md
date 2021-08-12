@@ -1,3 +1,16 @@
+# [0.3.0](https://github.com/aidenlx/relation-resolver/compare/0.2.0...0.3.0) (2021-08-12)
+
+
+### Bug Fixes
+
+* fix keys with empty values not removed from parentsCache ([31c722e](https://github.com/aidenlx/relation-resolver/commit/31c722e53d0d8dba0313d568de92ab1ef2c9ca78))
+
+
+### Features
+
+* **api:** add getAllRelNodesFrom ([462b5db](https://github.com/aidenlx/relation-resolver/commit/462b5db431795f303b65c72f08a408602abee65d))
+* **api:** add getPaths ([e76dfd7](https://github.com/aidenlx/relation-resolver/commit/e76dfd791c355383050730f18f583e99415ebb7a))
+
 # [0.2.0](https://github.com/aidenlx/relation-resolver/compare/0.1.0...0.2.0) (2021-08-10)
 
 

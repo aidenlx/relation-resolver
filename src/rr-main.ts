@@ -1,7 +1,7 @@
 import flat from "array.prototype.flat";
 import assertNever from "assert-never";
 import { isSet, List, Map, Set } from "immutable";
-import { App, Plugin, PluginManifest } from "obsidian";
+import { App, Notice, Plugin, PluginManifest } from "obsidian";
 import { debounce, TFile } from "obsidian";
 import {
   DEFAULT_SETTINGS,
@@ -21,15 +21,13 @@ import {
 import { getPathsFromField, getPathsFromFm } from "./get-field";
 import { AlterOp, getToggle, isRelType, revertRelType } from "./misc";
 
-const SELF_REF_ID = ":";
+const CIRCULAR_REF_ID = ":";
 
 export default class RelationResolver extends Plugin {
   settings: RelationResolverSettings = DEFAULT_SETTINGS;
 
-  // @ts-ignore
-  parentsCache: File_Parents = Map();
-  // @ts-ignore
-  fmCache: Map<string, Map<RelationInField, Set<string> | null>> = Map();
+  parentsCache = Map() as File_Parents;
+  fmCache = Map() as Map<string, Map<RelationInField, Set<string> | null>>;
   get metadataCache() {
     return this.app.metadataCache;
   }
@@ -270,10 +268,11 @@ export default class RelationResolver extends Plugin {
         const children = getMap(target);
         if (children)
           for (const filePath of children.keys()) {
-            if (childPath.includes(filePath))
-              // prevent self reference
-              allPaths.push(childPath.push(filePath + SELF_REF_ID));
-            else if (endingPaths?.includes(filePath))
+            if (childPath.includes(filePath)) {
+              // prevent circular reference
+              allPaths.push(childPath.push(filePath + CIRCULAR_REF_ID));
+              this.warnCircularRef(filePath, childPath);
+            } else if (endingPaths?.includes(filePath))
               allPaths.push(childPath.push(filePath));
             else iter(filePath, childPath.push(filePath));
           }
@@ -292,13 +291,13 @@ export default class RelationResolver extends Plugin {
       if (paths) {
         const nodeIds = (paths.flatten() as List<string>)
             .toSeq()
-            .filterNot((v) => v.endsWith(SELF_REF_ID))
+            .filterNot((v) => v.endsWith(CIRCULAR_REF_ID))
             .toSet(),
           excludes = paths
             .toSeq()
-            .filter((path) => path.last()?.endsWith(SELF_REF_ID))
+            .filter((path) => path.last()?.endsWith(CIRCULAR_REF_ID))
             .map((path) => {
-              const tuple = path // selfRefPaths tuple
+              const tuple = path // circularRefPaths tuple
                 .takeLast(2)
                 .update(-1, (v) => (v as string).slice(0, -1));
               return rel === "parents"
@@ -326,6 +325,37 @@ export default class RelationResolver extends Plugin {
       } else return null;
     },
   };
+
+  private warnCircularRef(CirRefFile: string, childPath: List<string>) {
+    const loop = childPath
+      .skipUntil((path) => path === CirRefFile)
+      .push(CirRefFile);
+    for (const suspect of [loop.get(-2), loop.get(1)]) {
+      let types;
+      if (
+        suspect &&
+        (types = this.parentsCache.get(suspect)?.get(CirRefFile))
+      ) {
+        let whereDefined = "";
+        if (types.has("direct"))
+          whereDefined = `${suspect} - Field "${this.settings.fieldNames["parents"]}": ${CirRefFile}`;
+        if (types.has("implied"))
+          whereDefined = `${CirRefFile} - Field "${this.settings.fieldNames["children"]}": ${suspect}`;
+        if (whereDefined)
+          new Notice(
+            `Circular reference defined in: \n${whereDefined}\n\n` +
+              `Loop: ${loop.join("->")}`,
+          );
+        else
+          console.error(
+            "File_Types with empty types: parentsCache-%s-%s, %o",
+            suspect,
+            CirRefFile,
+            this.parentsCache,
+          );
+      }
+    }
+  }
 
   private getMap(target: string, rel: "parents"): File_Types | null;
   private getMap(target: string, rel: "children"): File_Parents | null;

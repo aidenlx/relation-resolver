@@ -1,3 +1,10 @@
+# [0.4.0](https://github.com/aidenlx/relation-resolver/compare/0.3.0...0.4.0) (2021-08-14)
+
+
+### Features
+
+* **api:** add hasRel(); merge old functions into getRelsOf() and getRelsWithTypes() ([ec48ba4](https://github.com/aidenlx/relation-resolver/commit/ec48ba4d3afcb628ef69d525b166a8c3fdfea8bd))
+
 # [0.3.0](https://github.com/aidenlx/relation-resolver/compare/0.2.0...0.3.0) (2021-08-12)
 
 

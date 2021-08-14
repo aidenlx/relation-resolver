@@ -3,11 +3,13 @@ import "obsidian";
 import { List, Map, Set } from "immutable";
 
 export interface RelationResolverAPI {
-  getParentsOf: (filePath: string) => Set<string> | null;
-  getParentsWithTypes: (filePath: string) => File_Types | null;
-  getChildrenOf: (filePath: string) => Set<string> | null;
-  getChildrenWithTypes: (filePath: string) => File_Types | null;
-  getSiblingsOf: (filePath: string) => Set<string> | null;
+  hasRel: (rel: RelationInField, filePath: string) => boolean;
+  getRelsOf: (rel: RelationInField, filePath: string) => Set<string> | null;
+  getRelsWithTypes: (
+    rel: "parents" | "children",
+    filePath: string,
+  ) => File_Types | null;
+
   /**
    * Get path from given file to top parents/bottom children
    * @param endingPaths get paths ends with given files if given

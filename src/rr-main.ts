@@ -192,39 +192,73 @@ export default class RelationResolver extends Plugin {
   }
 
   api: RelationResolverAPI = {
-    getParentsOf: (filePath) => {
-      return this.parentsCache.get(filePath)?.keySeq().toSet() ?? null;
+    hasRel: (rel, filePath) => {
+      switch (rel) {
+        case "parents":
+          return this.parentsCache.has(filePath);
+        case "children":
+          return this.parentsCache.some((ft) => ft.has(filePath));
+        case "siblings": {
+          return Boolean(
+            this.parentsCache
+              .get(filePath)
+              ?.some((_types, path) =>
+                this.parentsCache.some(
+                  (ft) => path !== filePath && ft.has(path),
+                ),
+              ),
+          );
+        }
+        default:
+          assertNever(rel);
+      }
     },
-    getParentsWithTypes: (filePath) => {
-      return this.parentsCache.get(filePath, null);
+    getRelsOf: (rel, filePath) => {
+      let result;
+      switch (rel) {
+        case "parents":
+          return this.parentsCache.get(filePath)?.keySeq().toSet() ?? null;
+        case "children":
+          result = this.parentsCache.filter((ft) => ft.has(filePath));
+          return result.isEmpty() ? null : result.keySeq().toSet();
+        case "siblings": {
+          result = this.parentsCache
+            .get(filePath)
+            ?.reduce(
+              (newSet, _types, path) =>
+                newSet.withMutations((m) =>
+                  this.parentsCache
+                    .toSeq()
+                    .filter((ft) => ft.has(path))
+                    .forEach((_types, key) => m.add(key)),
+                ),
+              Set<string>(),
+            )
+            .delete(filePath);
+          return !result || result.isEmpty() ? null : result;
+        }
+        default:
+          assertNever(rel);
+      }
     },
-    getChildrenOf: (filePath) => {
-      const result = this.parentsCache
-        .filter((ft) => ft.has(filePath))
-        .keySeq();
-      return result.isEmpty() ? null : result.toSet();
-    },
-    getChildrenWithTypes: (filePath) => {
-      const result = this.parentsCache
-        .toSeq()
-        .filter((ft) => ft.has(filePath))
-        .map((ft) =>
-          (ft.get(filePath) as Set<RelationType>).map((t) => revertRelType(t)),
-        );
-      return result.isEmpty() ? null : result.toMap();
-    },
-    getSiblingsOf: (filePath) => {
-      const set = this.api.getParentsOf(filePath);
-      if (!set) return null;
-
-      const result = set
-        .reduce((newSet, path) => {
-          let children = this.api.getChildrenOf(path);
-          if (children) return newSet.union(children);
-          else return newSet;
-        }, Set<string>())
-        .delete(filePath);
-      return result.isEmpty() ? null : result;
+    getRelsWithTypes: (rel, filePath) => {
+      let result;
+      switch (rel) {
+        case "parents":
+          return this.parentsCache.get(filePath, null);
+        case "children":
+          result = this.parentsCache
+            .toSeq()
+            .filter((ft) => ft.has(filePath))
+            .map((ft) =>
+              (ft.get(filePath) as Set<RelationType>).map((t) =>
+                revertRelType(t),
+              ),
+            );
+          return result.isEmpty() ? null : result.toMap();
+        default:
+          assertNever(rel);
+      }
     },
     getPaths: (rel, filePath, endingPaths) => {
       let allPaths = List<List<string>>().asMutable();

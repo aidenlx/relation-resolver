@@ -1,3 +1,13 @@
+# [0.5.0](https://github.com/aidenlx/relation-resolver/compare/0.4.0...0.5.0) (2021-08-21)
+
+
+### Features
+
+* add direct sibling support ([e01e21b](https://github.com/aidenlx/relation-resolver/commit/e01e21b64e8e52318d3176533c8d0d61cc2a48dc))
+* add warn notice on circular reference ([e545b8d](https://github.com/aidenlx/relation-resolver/commit/e545b8dcd62fb41e6190c03d87fa0d3744452667))
+* **api:** add initialized flag ([62e5f99](https://github.com/aidenlx/relation-resolver/commit/62e5f99695b1a5aa99088cebf4dfe5cb63deb4d2))
+* support dataview ([478de5f](https://github.com/aidenlx/relation-resolver/commit/478de5f1e7dcc408b5b572bccd1bc05d9755a64b))
+
 # [0.4.0](https://github.com/aidenlx/relation-resolver/compare/0.3.0...0.4.0) (2021-08-14)
 
 

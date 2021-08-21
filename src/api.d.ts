@@ -3,6 +3,7 @@ import "obsidian";
 import { List, Map, Set } from "immutable";
 
 export interface RelationResolverAPI {
+  initialized: boolean;
   hasRel: (rel: RelationInField, filePath: string) => boolean;
   getRelsOf: (rel: RelationInField, filePath: string) => Set<string> | null;
   getRelsWithTypes: (

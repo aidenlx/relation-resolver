@@ -71,6 +71,7 @@ export default class RelationResolver extends Plugin {
       this.app.plugins.enabledPlugins.has("dataview")
     );
   }
+  initialized: boolean = false;
 
   private _getPathsFromField?: getPathsFromField;
   getPathsFromField: getPathsFromField = (...args) => {
@@ -206,6 +207,7 @@ export default class RelationResolver extends Plugin {
         : [files]
       : this.app.vault.getMarkdownFiles();
     if (updateAll) {
+      this.initialized = false;
       this.parentsCache = this.parentsCache.clear();
       this.sibCache = this.sibCache.clear();
       this.fmCache = this.fmCache.clear();
@@ -213,7 +215,10 @@ export default class RelationResolver extends Plugin {
     for (const file of files) {
       this.setCacheFromFile(file, !updateAll);
     }
-    if (updateAll) this.trigger("relation:resolved", this.api);
+    if (updateAll) {
+      this.initialized = true;
+      this.trigger("relation:resolved", this.api);
+    }
   }
 
   /**

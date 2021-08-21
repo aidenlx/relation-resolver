@@ -57,6 +57,9 @@ export default function getApi(this: RelationResolver): RelationResolverAPI {
     );
 
   return {
+    get initialized(): boolean {
+      return this.initialized;
+    },
     hasRel: (rel, filePath) => {
       switch (rel) {
         case "parents":

@@ -5,23 +5,24 @@ import { is, Seq, Set } from "immutable";
 import { Notice, TFile } from "obsidian";
 import { DataviewApi, Link } from "obsidian-dataview";
 
+import { RelationInField } from "./api";
 import RelationResolver from "./rr-main";
 
 export type getPathsFromField = (
   this: RelationResolver,
-  key: "parents" | "children",
+  key: RelationInField,
   file: TFile,
   forceFetch: boolean,
 ) => Set<string> | null | false;
 
-type getLinktext = (
-  key: "parents" | "children",
+export type GetLinktext = (
+  key: RelationInField,
   file: TFile,
   plugin: RelationResolver,
 ) => Set<string> | null;
 
 /** Get getPathsFromField function with given method to get linktext */
-export const getGPFF = (getLinktext: getLinktext): getPathsFromField =>
+export const getGPFF = (getLinktext: GetLinktext): getPathsFromField =>
   /**
    * Get vaild paths from given key with given method
    * @param forceFetch true to fetch files even if fm are the same
@@ -56,12 +57,14 @@ export const getGPFF = (getLinktext: getLinktext): getPathsFromField =>
         return vaildPath?.path ?? null;
       };
       return val
+        .toSeq()
         .map(toVaildPath)
-        .filter<string>((v): v is string => v !== null);
+        .filter<string>((v): v is string => v !== null)
+        .toSet();
     }
   };
 
-export const getLTFromFm: getLinktext = (key, file, plugin) => {
+export const getLTFromFm: GetLinktext = (key, file, plugin) => {
   const fm = plugin.metadataCache.getFileCache(file)?.frontmatter;
   if (fm) {
     const val = fm[plugin.settings.fieldNames[key]];
@@ -113,7 +116,7 @@ interface util {
   isLink(val: any): val is Link;
 }
 
-export const getLTFromDv: getLinktext = (key, file, plugin) => {
+export const getLTFromDv: GetLinktext = (key, file, plugin) => {
   const api = plugin.DvApi;
   if (!api) throw new Error("call getPathsFromDv when api not available");
   const fm = api.page(file.path);

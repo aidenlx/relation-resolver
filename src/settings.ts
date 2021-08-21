@@ -47,6 +47,7 @@ export class RelationResolverSettingTab extends PluginSettingTab {
           const save = debounce(
             async (value: string) => {
               settings.fieldNames[field] = value;
+              this.plugin.updateCache();
               await this.plugin.saveSettings();
             },
             500,
@@ -58,6 +59,7 @@ export class RelationResolverSettingTab extends PluginSettingTab {
         });
     setup("parents");
     setup("children");
+    setup("siblings");
   }
 
   setUseDv() {

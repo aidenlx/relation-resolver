@@ -45,6 +45,16 @@ export default function getApi(this: RelationResolver): RelationResolverAPI {
     }
   };
   const getMapI = getMap.bind(this);
+  const forEachImpliedSib = (
+    filePath: string,
+    callback: (path: string) => any,
+  ) =>
+    this.parentsCache.get(filePath)?.forEach((_types, path) =>
+      this.parentsCache
+        .toSeq()
+        .filter((ft) => ft.has(path))
+        .forEach((_types, key) => callback(key)),
+    );
 
   return {
     hasRel: (rel, filePath) => {
@@ -69,40 +79,30 @@ export default function getApi(this: RelationResolver): RelationResolverAPI {
       }
     },
     getRelsOf: (rel, filePath) => {
-      let result;
       switch (rel) {
         case "parents":
           return this.parentsCache.get(filePath)?.keySeq().toSet() ?? null;
-        case "children":
-          result = this.parentsCache.filter((ft) => ft.has(filePath));
+        case "children": {
+          let result = this.parentsCache.filter((ft) => ft.has(filePath));
           return result.isEmpty() ? null : result.keySeq().toSet();
+        }
         case "siblings": {
-          result = this.parentsCache
-            .get(filePath)
-            ?.reduce(
-              (newSet, _types, path) =>
-                newSet.withMutations((m) =>
-                  this.parentsCache
-                    .toSeq()
-                    .filter((ft) => ft.has(path))
-                    .forEach((_types, key) => m.add(key)),
-                ),
-              Set<string>(),
-            )
-            .delete(filePath);
-          return !result || result.isEmpty() ? null : result;
+          let result = Set<string>().asMutable();
+          forEachImpliedSib(filePath, (path) => result.add(path));
+          result.union(this.sibCache.get(filePath) ?? []);
+          result.delete(filePath);
+          return !result || result.isEmpty() ? null : result.asImmutable();
         }
         default:
           assertNever(rel);
       }
     },
     getRelsWithTypes: (rel, filePath) => {
-      let result;
       switch (rel) {
         case "parents":
           return this.parentsCache.get(filePath, null);
-        case "children":
-          result = this.parentsCache
+        case "children": {
+          let result = this.parentsCache
             .toSeq()
             .filter((ft) => ft.has(filePath))
             .map((ft) =>
@@ -111,6 +111,21 @@ export default function getApi(this: RelationResolver): RelationResolverAPI {
               ),
             );
           return result.isEmpty() ? null : result.toMap();
+        }
+        case "siblings": {
+          let result = Map().asMutable() as File_Types;
+          const typesI = Set<RelationType>(["implied"]);
+          const typesD = Set<RelationType>(["direct"]);
+          forEachImpliedSib(filePath, (path) => result.set(path, typesI));
+          result.mergeDeep(
+            this.sibCache
+              .get(filePath)
+              ?.toKeyedSeq()
+              .map(() => typesD) ?? [],
+          );
+          result.delete(filePath);
+          return result.isEmpty() ? null : result.asImmutable();
+        }
         default:
           assertNever(rel);
       }

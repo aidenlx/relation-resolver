@@ -6,7 +6,7 @@ export interface RelationResolverAPI {
   hasRel: (rel: RelationInField, filePath: string) => boolean;
   getRelsOf: (rel: RelationInField, filePath: string) => Set<string> | null;
   getRelsWithTypes: (
-    rel: "parents" | "children",
+    rel: RelationInField,
     filePath: string,
   ) => File_Types | null;
 
@@ -41,7 +41,7 @@ export type Operation = "add" | "remove";
 
 export type ChangeInfo = {
   op: Operation;
-  relation: RelationInField;
+  relation: "parents" | "children";
   /** affected target and the list of added/removed relation files(parents/...) */
   affected: Map<string, File_Types>;
 };

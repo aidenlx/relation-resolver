@@ -20,6 +20,7 @@ import {
 } from "./api";
 import {
   getGPFF,
+  GetLinktext,
   getLTFromDv,
   getLTFromFm,
   getPathsFromField,
@@ -33,6 +34,7 @@ export default class RelationResolver extends Plugin {
   settings: RelationResolverSettings = DEFAULT_SETTINGS;
 
   parentsCache = Map() as File_Parents;
+  sibCache = Map<string, Set<string>>();
   fmCache = Map() as Map<string, Map<RelationInField, Set<string> | null>>;
   get metadataCache() {
     return this.app.metadataCache;
@@ -63,6 +65,12 @@ export default class RelationResolver extends Plugin {
   get DvApi() {
     return this.app.plugins.plugins["dataview"]?.api;
   }
+  get isDvEnabled(): boolean {
+    return (
+      this.settings.useDataview &&
+      this.app.plugins.enabledPlugins.has("dataview")
+    );
+  }
 
   private _getPathsFromField?: getPathsFromField;
   getPathsFromField: getPathsFromField = (...args) => {
@@ -75,14 +83,11 @@ export default class RelationResolver extends Plugin {
     console.log("loading relation-resolver");
 
     await this.loadSettings();
-    if (
-      this.settings.useDataview &&
-      this.app.plugins.enabledPlugins.has("dataview")
-    ) {
-      this._getPathsFromField = getGPFF(getLTFromFm).bind(this);
+    if (this.isDvEnabled) {
+      this._getPathsFromField = getGPFF(getLTFromDv).bind(this);
       registerDvEvents(this);
     } else {
-      this._getPathsFromField = getGPFF(getLTFromDv).bind(this);
+      this._getPathsFromField = getGPFF(getLTFromFm).bind(this);
       registerFmEvents(this);
     }
 
@@ -112,6 +117,8 @@ export default class RelationResolver extends Plugin {
   deleteFromCache(filePath: string) {
     const parents = this.parentsCache.get(filePath) ?? null;
     let children: File_Types | null = Map().asMutable() as File_Types;
+    this.fmCache = this.fmCache.delete(filePath);
+    this.sibCache = this.sibCache.delete(filePath);
     this.parentsCache = this.parentsCache
       .delete(filePath)
       .withMutations((m) => {
@@ -158,7 +165,7 @@ export default class RelationResolver extends Plugin {
   }
   /**
    * Update cache with files that includes given paths in fields
-   * @param findFor filename to match (no extension)
+   * @param findFor file basename to match (no extension)
    */
   updateCacheForFilenames(...findFor: string[]): void {
     const matched = (field: unknown) =>
@@ -172,12 +179,17 @@ export default class RelationResolver extends Plugin {
         )
       );
     for (const file of this.app.vault.getMarkdownFiles()) {
-      const fm = this.metadataCache.getFileCache(file)?.frontmatter;
-      if (!fm) continue;
-      const { fieldNames } = this.settings;
+      const getLinktext: GetLinktext = this.isDvEnabled
+        ? getLTFromDv
+        : getLTFromFm;
+      const toScan: RelationInField[] = ["parents", "children", "siblings"];
       if (
-        matched(fm[fieldNames["parents"]]) ||
-        matched(fm[fieldNames["children"]])
+        toScan.some((rel) =>
+          getLinktext(rel, file, this)?.some((val) =>
+            // if any linktext includes basenames that we are looking for
+            findFor.some((name) => val.includes(name)),
+          ),
+        )
       )
         this.setCacheFromFile(file, true, true);
     }
@@ -195,6 +207,7 @@ export default class RelationResolver extends Plugin {
       : this.app.vault.getMarkdownFiles();
     if (updateAll) {
       this.parentsCache = this.parentsCache.clear();
+      this.sibCache = this.sibCache.clear();
       this.fmCache = this.fmCache.clear();
     }
     for (const file of files) {
@@ -346,6 +359,12 @@ export default class RelationResolver extends Plugin {
     this.parentsCache = this.parentsCache.withMutations((m) =>
       removedC?.forEach((key) => m.get(key)?.isEmpty() && m.delete(key)),
     );
+
+    const sib = this.getPathsFromField("siblings", file, forceFetch);
+    if (sib !== false) {
+      if (sib === null) this.sibCache = this.sibCache.delete(file.path);
+      else this.sibCache = this.sibCache.set(file.path, sib);
+    }
 
     if (triggerEvt) {
       type from = Set<string> | null;

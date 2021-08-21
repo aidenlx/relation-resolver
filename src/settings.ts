@@ -5,6 +5,7 @@ import { RelationInField } from "./api";
 
 export interface RelationResolverSettings {
   fieldNames: Record<RelationInField, string>;
+  useDataview: boolean;
 }
 
 export const DEFAULT_SETTINGS: RelationResolverSettings = {
@@ -13,6 +14,7 @@ export const DEFAULT_SETTINGS: RelationResolverSettings = {
     children: "children",
     siblings: "sibling",
   },
+  useDataview: true,
 };
 
 export class RelationResolverSettingTab extends PluginSettingTab {
@@ -28,6 +30,7 @@ export class RelationResolverSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     this.setFieldNames();
+    if (this.plugin.DvApi) this.setUseDv();
   }
 
   setFieldNames() {
@@ -55,5 +58,28 @@ export class RelationResolverSettingTab extends PluginSettingTab {
         });
     setup("parents");
     setup("children");
+  }
+
+  setUseDv() {
+    const { settings } = this.plugin;
+    new Setting(this.containerEl)
+      .setName("Use Dataview to parse fields")
+      .setDesc(
+        createFragment((el) => {
+          el.appendText(`Required to parse dataview fields: `);
+          el.createEl("code", {
+            text: `${this.plugin.settings.fieldNames.parents}::[[example]]`,
+          });
+        }),
+      )
+      .addToggle((toggle) => {
+        toggle
+          .setValue(settings.useDataview)
+          .onChange(async (value: boolean) => {
+            settings.useDataview = value;
+            this.plugin.updateCache();
+            await this.plugin.saveSettings();
+          });
+      });
   }
 }

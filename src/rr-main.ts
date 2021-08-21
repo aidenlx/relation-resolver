@@ -1,7 +1,7 @@
 import flat from "array.prototype.flat";
 import assertNever from "assert-never";
-import { isSet, List, Map, Set } from "immutable";
-import { App, Notice, Plugin, PluginManifest } from "obsidian";
+import { isSet, Map, Set } from "immutable";
+import { Plugin } from "obsidian";
 import { debounce, TFile } from "obsidian";
 import {
   DEFAULT_SETTINGS,
@@ -18,10 +18,16 @@ import {
   RelationResolverAPI,
   RelationType,
 } from "./api";
-import { getPathsFromField, getPathsFromFm } from "./get-field";
+import {
+  getGPFF,
+  getLTFromDv,
+  getLTFromFm,
+  getPathsFromField,
+  registerDvEvents,
+  registerFmEvents,
+} from "./get-field";
 import { AlterOp, getToggle, isRelType, revertRelType } from "./misc";
-
-const CIRCULAR_REF_ID = ":";
+import getApi from "./rr-api";
 
 export default class RelationResolver extends Plugin {
   settings: RelationResolverSettings = DEFAULT_SETTINGS;
@@ -54,42 +60,32 @@ export default class RelationResolver extends Plugin {
     this.metadataCache.trigger(name, ...data);
   }
 
-  constructor(app: App, manifest: PluginManifest) {
-    super(app, manifest);
-    this.registerEvent(
-      this.metadataCache.on("initialized", () => {
-        this.updateCache();
-      }),
-    );
-    if (this.metadataCache.initialized) this.updateCache();
+  get DvApi() {
+    return this.app.plugins.plugins["dataview"]?.api;
+  }
 
-    this.registerEvent(
-      this.metadataCache.on("changed", (file) => {
-        if (file.extension === "md") {
-          if (this.filesToUpdate.every((f) => f.path !== file.path))
-            this.filesToUpdate.push(file);
-          this.update();
-        }
-      }),
-    );
-    this.registerEvent(
-      this.vault.on("delete", (file) => {
-        if (file instanceof TFile && file.extension === "md")
-          this.deleteFromCache(file.path);
-      }),
-    );
-    this.registerEvent(
-      this.vault.on("rename", (file, oldPath) => {
-        if (file instanceof TFile && file.extension === "md") {
-          this.deleteFromCache(oldPath);
-          // set delay for renamed file to load cache
-          setTimeout(() => {
-            this.updateCacheForFilenames(file.basename);
-            this.setCacheFromFile(file, true, true);
-          }, 1e3);
-        }
-      }),
-    );
+  private _getPathsFromField?: getPathsFromField;
+  getPathsFromField: getPathsFromField = (...args) => {
+    if (this._getPathsFromField)
+      return this._getPathsFromField.apply(this, args);
+    else throw new Error("Call getPathsFromField before initialized");
+  };
+
+  async onload() {
+    console.log("loading relation-resolver");
+
+    await this.loadSettings();
+    if (
+      this.settings.useDataview &&
+      this.app.plugins.enabledPlugins.has("dataview")
+    ) {
+      this._getPathsFromField = getGPFF(getLTFromFm).bind(this);
+      registerDvEvents(this);
+    } else {
+      this._getPathsFromField = getGPFF(getLTFromDv).bind(this);
+      registerFmEvents(this);
+    }
+
     // this.metadataCache.on("relation:resolved", (api) => {
     //   console.log("relation:resolved", api);
     // });
@@ -99,7 +95,20 @@ export default class RelationResolver extends Plugin {
     //     console.log(relation + op, affected.toJS(), api);
     //   },
     // );
+    this.addSettingTab(new RelationResolverSettingTab(this.app, this));
   }
+  onunload() {
+    console.log("unloading relation-resolver");
+  }
+  async loadSettings() {
+    this.settings = { ...this.settings, ...(await this.loadData()) };
+  }
+  async saveSettings() {
+    await this.saveData(this.settings);
+  }
+
+  api: RelationResolverAPI = getApi.call(this);
+
   deleteFromCache(filePath: string) {
     const parents = this.parentsCache.get(filePath) ?? null;
     let children: File_Types | null = Map().asMutable() as File_Types;
@@ -174,205 +183,6 @@ export default class RelationResolver extends Plugin {
     }
   }
 
-  async onload() {
-    console.log("loading relation-resolver");
-    await this.loadSettings();
-    this.addSettingTab(new RelationResolverSettingTab(this.app, this));
-  }
-  onunload() {
-    console.log("unloading relation-resolver");
-  }
-  async loadSettings() {
-    this.settings = { ...this.settings, ...(await this.loadData()) };
-  }
-  async saveSettings() {
-    await this.saveData(this.settings);
-  }
-
-  api: RelationResolverAPI = {
-    hasRel: (rel, filePath) => {
-      switch (rel) {
-        case "parents":
-          return this.parentsCache.has(filePath);
-        case "children":
-          return this.parentsCache.some((ft) => ft.has(filePath));
-        case "siblings": {
-          return Boolean(
-            this.parentsCache
-              .get(filePath)
-              ?.some((_types, path) =>
-                this.parentsCache.some(
-                  (ft) => path !== filePath && ft.has(path),
-                ),
-              ),
-          );
-        }
-        default:
-          assertNever(rel);
-      }
-    },
-    getRelsOf: (rel, filePath) => {
-      let result;
-      switch (rel) {
-        case "parents":
-          return this.parentsCache.get(filePath)?.keySeq().toSet() ?? null;
-        case "children":
-          result = this.parentsCache.filter((ft) => ft.has(filePath));
-          return result.isEmpty() ? null : result.keySeq().toSet();
-        case "siblings": {
-          result = this.parentsCache
-            .get(filePath)
-            ?.reduce(
-              (newSet, _types, path) =>
-                newSet.withMutations((m) =>
-                  this.parentsCache
-                    .toSeq()
-                    .filter((ft) => ft.has(path))
-                    .forEach((_types, key) => m.add(key)),
-                ),
-              Set<string>(),
-            )
-            .delete(filePath);
-          return !result || result.isEmpty() ? null : result;
-        }
-        default:
-          assertNever(rel);
-      }
-    },
-    getRelsWithTypes: (rel, filePath) => {
-      let result;
-      switch (rel) {
-        case "parents":
-          return this.parentsCache.get(filePath, null);
-        case "children":
-          result = this.parentsCache
-            .toSeq()
-            .filter((ft) => ft.has(filePath))
-            .map((ft) =>
-              (ft.get(filePath) as Set<RelationType>).map((t) =>
-                revertRelType(t),
-              ),
-            );
-          return result.isEmpty() ? null : result.toMap();
-        default:
-          assertNever(rel);
-      }
-    },
-    getPaths: (rel, filePath, endingPaths) => {
-      let allPaths = List<List<string>>().asMutable();
-      const getMap = (target: string): Map<string, any> | null =>
-        // @ts-ignore
-        this.getMap(target, rel) as Map<string, any> | null;
-
-      const iter = (target: string, childPath: List<string>) => {
-        const children = getMap(target);
-        if (children)
-          for (const filePath of children.keys()) {
-            if (childPath.includes(filePath)) {
-              // prevent circular reference
-              allPaths.push(childPath.push(filePath + CIRCULAR_REF_ID));
-              this.warnCircularRef(filePath, childPath);
-            } else if (endingPaths?.includes(filePath))
-              allPaths.push(childPath.push(filePath));
-            else iter(filePath, childPath.push(filePath));
-          }
-        else if (
-          childPath.size > 1 &&
-          (!endingPaths || endingPaths.includes(childPath.last()))
-        )
-          allPaths.push(childPath);
-      };
-
-      iter(filePath, List<string>([filePath]));
-      return allPaths.isEmpty() ? null : allPaths.asImmutable();
-    },
-    getAllRelNodesFrom: (rel, filePath, endingPaths) => {
-      const paths = this.api.getPaths(rel, filePath, endingPaths);
-      if (paths) {
-        const nodeIds = (paths.flatten() as List<string>)
-            .toSeq()
-            .filterNot((v) => v.endsWith(CIRCULAR_REF_ID))
-            .toSet(),
-          excludes = paths
-            .toSeq()
-            .filter((path) => path.last()?.endsWith(CIRCULAR_REF_ID))
-            .map((path) => {
-              const tuple = path // circularRefPaths tuple
-                .takeLast(2)
-                .update(-1, (v) => (v as string).slice(0, -1));
-              return rel === "parents"
-                ? tuple
-                : rel === "children"
-                ? tuple.reverse()
-                : assertNever(rel);
-            })
-            .reduce(
-              (map, [key, exclude]) =>
-                map.update(key, (set) =>
-                  set ? set.add(exclude) : Set([exclude]),
-                ),
-              Map<string, Set<string>>(),
-            );
-        let parents;
-        return nodeIds.toMap().map(
-          (filePath): File_Types | null =>
-            (parents = this.parentsCache
-              .get(filePath)
-              ?.deleteAll(excludes.get(filePath) ?? [])) && !parents.isEmpty()
-              ? parents
-              : null, // top nodes
-        );
-      } else return null;
-    },
-  };
-
-  private warnCircularRef(CirRefFile: string, childPath: List<string>) {
-    const loop = childPath
-      .skipUntil((path) => path === CirRefFile)
-      .push(CirRefFile);
-    for (const suspect of [loop.get(-2), loop.get(1)]) {
-      let types;
-      if (
-        suspect &&
-        (types = this.parentsCache.get(suspect)?.get(CirRefFile))
-      ) {
-        let whereDefined = "";
-        if (types.has("direct"))
-          whereDefined = `${suspect} - Field "${this.settings.fieldNames["parents"]}": ${CirRefFile}`;
-        if (types.has("implied"))
-          whereDefined = `${CirRefFile} - Field "${this.settings.fieldNames["children"]}": ${suspect}`;
-        if (whereDefined)
-          new Notice(
-            `Circular reference defined in: \n${whereDefined}\n\n` +
-              `Loop: ${loop.join("->")}`,
-          );
-        else
-          console.error(
-            "File_Types with empty types: parentsCache-%s-%s, %o",
-            suspect,
-            CirRefFile,
-            this.parentsCache,
-          );
-      }
-    }
-  }
-
-  private getMap(target: string, rel: "parents"): File_Types | null;
-  private getMap(target: string, rel: "children"): File_Parents | null;
-  private getMap(
-    target: string,
-    rel: "parents" | "children",
-  ): File_Parents | File_Types | null {
-    const parents =
-      rel === "parents"
-        ? this.parentsCache.get(target)
-        : rel === "children"
-        ? this.parentsCache.filter((ft) => ft.has(target))
-        : assertNever(rel);
-    if (parents && !parents.isEmpty()) return parents;
-    else return null;
-  }
-
   /**
    * @param files force update entire cache when not given
    */
@@ -383,7 +193,10 @@ export default class RelationResolver extends Plugin {
         ? files
         : [files]
       : this.app.vault.getMarkdownFiles();
-    if (updateAll) this.parentsCache = this.parentsCache.clear();
+    if (updateAll) {
+      this.parentsCache = this.parentsCache.clear();
+      this.fmCache = this.fmCache.clear();
+    }
     for (const file of files) {
       this.setCacheFromFile(file, !updateAll);
     }
@@ -400,14 +213,13 @@ export default class RelationResolver extends Plugin {
   private updateParent(
     key: "parents" | "children",
     file: TFile,
-    getValFunc: getPathsFromField,
     forceFetch: boolean,
   ): [added: Set<string> | null, removed: Set<string> | null] {
     const targetPath = file.path;
 
     let added: Set<string> | null, removed: Set<string> | null;
     // get from children field
-    const fmPaths = getValFunc.call(this, key, file, forceFetch);
+    const fmPaths = this.getPathsFromField(key, file, forceFetch);
     if (fmPaths !== false) {
       type mergeMap = Map<string, Map<string, AlterOp>>;
       /** get all cached relation for given file and marked them remove */
@@ -528,19 +340,9 @@ export default class RelationResolver extends Plugin {
   }
 
   /** Read relation defined in given file and update relationCache */
-  private setCacheFromFile(file: TFile, triggerEvt = true, forceFetch = false) {
-    const [addedP, removedP] = this.updateParent(
-      "parents",
-      file,
-      getPathsFromFm,
-      forceFetch,
-    );
-    const [addedC, removedC] = this.updateParent(
-      "children",
-      file,
-      getPathsFromFm,
-      forceFetch,
-    );
+  setCacheFromFile(file: TFile, triggerEvt = true, forceFetch = false) {
+    const [addedP, removedP] = this.updateParent("parents", file, forceFetch);
+    const [addedC, removedC] = this.updateParent("children", file, forceFetch);
     this.parentsCache = this.parentsCache.withMutations((m) =>
       removedC?.forEach((key) => m.get(key)?.isEmpty() && m.delete(key)),
     );

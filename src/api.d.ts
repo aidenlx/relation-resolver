@@ -12,7 +12,7 @@ export interface RelationResolverAPI {
   ) => File_Types | null;
 
   /**
-   * Get path from given file to top parents/bottom children
+   * Get hierarchy path from given file to top parents/bottom children
    * @param endingPaths get paths ends with given files if given
    * @returns self reference if last filepath ends with ":"
    */
@@ -21,6 +21,10 @@ export interface RelationResolverAPI {
     filePath: string,
     endingPaths?: string[],
   ) => List<List<string>> | null;
+  /**
+   * Get flat hierarchy map of given relation
+   * @param endingPaths get paths ends with given files if given
+   */
   getAllRelNodesFrom: (
     rel: "parents" | "children",
     filePath: string,
